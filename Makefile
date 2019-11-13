@@ -46,7 +46,7 @@ simtv: simtv.cpp
 prebuild:
 
 clean:
-	rm -fr $(OBJS) simtv.o a.out simtv
+	rm -fr *.o a.out simtv
 
 
 
