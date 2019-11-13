@@ -5,10 +5,15 @@ $(document).ready(function() {
             tvs: [],
         },
         methods: {
-            modify: function(event) {
-                var mk = $(event.currentTarget).attr("mk");
-                console.debug(mk);
-
+            wakeup: function(event) {
+                var k = $(event.currentTarget).attr("k");
+                console.debug(k);
+                var id = page.tvs[k].id;
+                console.debug(id);
+                __request("wakeup/" + id, {}, function(res) {
+                    console.debug(res);
+                    reload_data();
+                });
             },
         },
     });
@@ -17,8 +22,12 @@ $(document).ready(function() {
         page.tvs = [];
         __request("list", {}, function(res) {
             console.debug(res);
+            for (var k in res.data) {
+                page.tvs.push(res.data[k]);
+            }
         });
     }
     reload_data();
+    setInterval(function() { reload_data(); }, 5000);
 });
 

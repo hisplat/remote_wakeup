@@ -296,4 +296,8 @@ body { font-family: "Microsoft YaHei","Lato","Helvetica Neue",Arial,Helvetica,sa
     background-color: white;
 }
 
+[v-cloak] {
+    display: none;
+}
+
 

@@ -20,6 +20,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <time.h>
+#include <arpa/inet.h>
 
 #include "http_parser.h"
 
@@ -34,8 +35,9 @@ typedef struct {
 class AliveClient {
 public:
     std::string id;
-    bool on;
+    std::string status;
     int alive;
+    struct sockaddr_in addr;
 };
 
 class HttpClient {
@@ -49,6 +51,8 @@ static const int kMaxAliveTime = 2 * 60 * 1000;
 
 static std::map<std::string, AliveClient> gAliveClients;
 static std::map<int, HttpClient *> gHttpClients;
+static int alive_socket = -1;
+
 
 static int now()
 {
@@ -168,6 +172,18 @@ static void remove_timeout_client()
 {
 }
 
+static bool wakeup_client(const std::string& id)
+{
+    std::map<std::string, AliveClient>::iterator it = gAliveClients.find(id);
+    if (it == gAliveClients.end()) {
+        return false;
+    }
+    sendto(alive_socket, "wakeup", 6, 0, (struct sockaddr *)&(it->second.addr), sizeof(struct sockaddr_in));
+    printf("wakeup client %s(%s:%d).\n", it->second.id.c_str(), inet_ntoa(it->second.addr.sin_addr), ntohs(it->second.addr.sin_port));
+    it->second.status = "Waking";
+    return true;
+}
+
 static void on_api(int sock, const std::string& url)
 {
     // /api/list
@@ -184,7 +200,7 @@ static void on_api(int sock, const std::string& url)
         remove_timeout_client();
 
         std::stringstream oss;
-        oss << "[";
+        oss << "{\"op\": \"list\", \"data\": [";
         for (std::map<std::string, AliveClient>::iterator it = gAliveClients.begin(); it != gAliveClients.end(); it++) {
             if (it != gAliveClients.begin()) {
                 oss << ", ";
@@ -192,12 +208,12 @@ static void on_api(int sock, const std::string& url)
             oss << "{"
                 << "\"id\": \"" << it->second.id << "\""
                 << ", "
-                <<"\"on\": " << it->second.on
+                <<"\"status\": \"" << it->second.status << "\""
                 << ", "
                 << "\"alive\": " << it->second.alive
                 << "}";
         }
-        oss << "]";
+        oss << "]}";
 
         send_header(sock, 200, oss.str().length());
         send_data(sock, oss.str().c_str(), oss.str().length());
@@ -208,6 +224,13 @@ static void on_api(int sock, const std::string& url)
             send_header(sock, 404);
             send_complete(sock);
         }
+        bool b = wakeup_client(v[2]);
+        const char * success = "{\"op\": \"wakeup\", \"data\": \"success\"}";
+        const char * fail    = "{\"op\": \"wakeup\", \"data\": \"fail\"}";
+        const char * result = b ? success : fail;
+        send_header(sock, 200, strlen(result));
+        send_data(sock, success, strlen(result));
+        send_complete(sock);
     }
 
 }
@@ -240,37 +263,37 @@ static int on_url(http_parser* parser, const char * at, size_t length)
 
 static int on_status(http_parser* parser, const char * at, size_t length)
 {
-    printf("%s: %.*s\n", __func__, (int)length, at);
+    fprintf(stderr, "%s: %.*s\n", __func__, (int)length, at);
     return 0;
 }
 
 static int on_header_field(http_parser* parser, const char * at, size_t length)
 {
-    printf("%s: %.*s\n", __func__, (int)length, at);
+    fprintf(stderr, "%s: %.*s\n", __func__, (int)length, at);
     return 0;
 }
 
 static int on_header_value(http_parser* parser, const char * at, size_t length)
 {
-    printf("%s: %.*s\n", __func__, (int)length, at);
+    fprintf(stderr, "%s: %.*s\n", __func__, (int)length, at);
     return 0;
 }
 
 static int on_header_complete(http_parser* parser, const char * at, size_t length)
 {
-    printf("%s: %.*s\n", __func__, (int)length, at);
+    fprintf(stderr, "%s: %.*s\n", __func__, (int)length, at);
     return 0;
 }
 
 static int on_headers_complete(http_parser * parser)
 {
-    printf("%s\n", __func__);
+    fprintf(stderr, "%s\n", __func__);
     return 0;
 }
 
 static int on_body(http_parser* parser, const char * at, size_t length)
 {
-    printf("%s: %.*s\n", __func__, (int)length, at);
+    fprintf(stderr, "%s: %.*s\n", __func__, (int)length, at);
     return 0;
 }
 
@@ -285,13 +308,13 @@ static int on_message_complete(http_parser * parser)
 
 static int on_chunk_header(http_parser * parser)
 {
-    printf("%s\n", __func__);
+    fprintf(stderr, "%s\n", __func__);
     return 0;
 }
 
 static int on_chunk_complete(http_parser * parser)
 {
-    printf("%s\n", __func__);
+    fprintf(stderr, "%s\n", __func__);
     return 0;
 }
 
@@ -312,7 +335,7 @@ int main()
 
     int epollfd = epoll_create(1024);
     int http_socket = socket(PF_INET, SOCK_STREAM, 0);
-    int alive_socket = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    alive_socket = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
 
     assert(epollfd >= 0);
     assert(http_socket >= 0);
@@ -350,11 +373,17 @@ int main()
                 addfd(epollfd, fd);
             } else if (events[i].data.fd == alive_socket) {
                 AlivePacket packet;
-                int r = read(alive_socket, (char *)&packet, sizeof(packet));
+                socklen_t l = sizeof(addr);
+                int r = recvfrom(alive_socket, (char *)&packet, sizeof(packet), 0, (struct sockaddr *)&addr, &l);
+
                 assert (r == sizeof(packet));
                 gAliveClients[packet.id].id = packet.id;
-                gAliveClients[packet.id].on = (packet.on != 0);
+                gAliveClients[packet.id].status = (packet.on != 0 ? "ON" : "OFF");
                 gAliveClients[packet.id].alive = now();
+                memcpy(&(gAliveClients[packet.id].addr), &addr, sizeof(addr));
+
+                printf("%s update alive time.\n", packet.id);
+
             } else {
                 int fd = events[i].data.fd;
                 char buffer[4096];

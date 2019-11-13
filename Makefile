@@ -4,8 +4,8 @@ CXX	:= g++
 CC  := gcc
 LD	:= g++
 AR	:= ar
-CXXFLAGS := -Wall -O2 -Werror
-INCLUDES = -Ilog -I.
+CXXFLAGS := -Wall -O2 -Werror -g
+INCLUDES = 
 
 TARGET	= a.out
 LINKS	= 
@@ -16,13 +16,20 @@ SOURCES += http_parser.c
 
 OBJS := $(SOURCES:.cc=.o)
 
-all: prebuild $(TARGET) $(READLOG)
+all: prebuild $(TARGET) simtv
 
 $(TARGET): $(OBJS)
 	@echo Linking $@ ...
 	$(LD) $(OBJS) $(LINKS) $(LIBS) -o$@
 	@echo -------------------------------------------
 	@echo done.
+
+simtv: simtv.cpp
+	@echo Linking $@ ...
+	$(CXX) $< $(INCLUDES) $(CXXFLAGS) $(LINKS) $(LIBS) -o$@
+	@echo -------------------------------------------
+	@echo done.
+
 
 .cpp.o:
 	@echo Compling $@ ...
@@ -39,7 +46,7 @@ $(TARGET): $(OBJS)
 prebuild:
 
 clean:
-	rm -fr $(OBJS) $(DEPS) readlog.o wincurse.o
+	rm -fr $(OBJS) simtv.o a.out simtv
 
 
 

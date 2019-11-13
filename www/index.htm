@@ -18,7 +18,18 @@
     </head>
     <body>
         <div id="page-content">
-            xx
+            <table class="table table-stripped">
+                <tr>
+                    <th>ID</th>
+                    <th>status</th>
+                    <th>op</th>
+                </tr>
+                <tr v-for="(v, k) in tvs">
+                    <td>{{v.id}}</td>
+                    <td>{{v.status}}</td>
+                    <td><button v-bind:k="k" v-on:click="wakeup" class="btn btn-default">wakeup</button></td>
+                </tr>
+            </table>
         </div>
     </body>
 </body>
